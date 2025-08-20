@@ -1,0 +1,37 @@
+# Claude Code private configuration
+CLAUDE.md
+
+# Local private notes folder
+.local-notes/
+
+# Private configuration files
+*.env
+*.env.local
+.env*
+config/private/
+secrets/
+
+# Sensitive documentation files
+docs/ssh-keys-info.md
+docs/proxy-configuration.md
+docs/server-docker-installation.md
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+logs/
+/docs/server-docker-installation.md
