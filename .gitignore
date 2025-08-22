@@ -35,3 +35,10 @@ Thumbs.db
 *.log
 logs/
 /docs/server-docker-installation.md
+
+# Docker GitLab sensitive files
+docker/gitlab/*/config/
+docker/gitlab/*/data/
+docker/gitlab/*/logs/
+docker/gitlab/*/backups/
+docker/gitlab/*/.env

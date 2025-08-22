@@ -1,0 +1,145 @@
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:17.5.1-ce.0
+    container_name: gitlab-v5
+    restart: unless-stopped
+    hostname: 'gitlab.example.com'
+    privileged: true  # 解决权限问题 - 必需参数
+    shm_size: '512m'  # 避免内存不足导致502错误
+    
+    ports:
+      # HTTP访问端口 (外部8929映射到容器内80)
+      - "8929:80"
+      # HTTPS访问端口 (外部8943映射到容器内443)
+      - "8943:443"
+      # SSH访问端口 (外部2289映射到容器内22)
+      - "2289:22"
+      # Container Registry端口 (外部5089映射到容器内5050)
+      - "5089:5050"
+    
+    environment:
+      TZ: Asia/Shanghai  # 时区设置
+      GITLAB_OMNIBUS_CONFIG: |
+        # 基础URL配置 - 重要：使用标准80端口在容器内
+        external_url 'http://192.168.0.127'
+        nginx['listen_port'] = 80
+        nginx['listen_https'] = false
+        
+        # SSH端口配置 - 必须与docker-compose中的端口映射一致
+        gitlab_rails['gitlab_shell_ssh_port'] = 2289
+        
+        # 时区设置
+        gitlab_rails['time_zone'] = 'Asia/Shanghai'
+        
+        # 初始root密码 - 首次登录后请立即修改
+        gitlab_rails['initial_root_password'] = 'GitLab@V5#2024!'
+        
+        # 用户注册设置
+        gitlab_rails['gitlab_signup_enabled'] = false
+        gitlab_rails['gitlab_email_enabled'] = false
+        
+        # Container Registry配置
+        registry_external_url 'http://192.168.0.127:5089'
+        gitlab_rails['registry_enabled'] = true
+        registry['enable'] = true
+        
+        # Git LFS支持
+        gitlab_rails['lfs_enabled'] = true
+        
+        # 备份设置
+        gitlab_rails['backup_keep_time'] = 604800  # 保留7天
+        gitlab_rails['backup_path'] = "/var/opt/gitlab/backups"
+        
+        # GitLab KAS配置 - 修复内部连接问题
+        gitlab_kas['enable'] = true
+        gitlab_kas['listen_address'] = '0.0.0.0:8150'
+        gitlab_rails['gitlab_kas_enabled'] = true
+        gitlab_rails['gitlab_kas_internal_url'] = 'grpc://localhost:8153'
+        
+        # 性能优化 - 适中内存配置(4-8GB内存服务器)
+        postgresql['shared_buffers'] = '256MB'
+        postgresql['max_connections'] = 200
+        postgresql['work_mem'] = '8MB'
+        postgresql['checkpoint_segments'] = 32
+        postgresql['checkpoint_completion_target'] = 0.9
+        
+        # Puma Web服务器配置
+        puma['worker_processes'] = 2
+        puma['min_threads'] = 2
+        puma['max_threads'] = 4
+        
+        # Sidekiq后台任务处理器
+        sidekiq['max_concurrency'] = 10
+        
+        # Nginx配置
+        nginx['worker_processes'] = 2
+        nginx['worker_connections'] = 1024
+        nginx['client_max_body_size'] = '500m'
+        nginx['keepalive_timeout'] = 65
+        nginx['gzip_enabled'] = true
+        
+        # Redis配置优化 - 修复连接EOF错误
+        redis['maxmemory'] = "256mb"
+        redis['maxmemory_policy'] = "allkeys-lru"
+        redis['tcp_keepalive'] = 60
+        redis['tcp_backlog'] = 511
+        
+        # 禁用监控服务节省资源
+        prometheus_monitoring['enable'] = false
+        
+        # 禁用不需要的服务
+        gitlab_pages['enable'] = false
+        gitlab_rails['mattermost_enabled'] = false
+        
+        # 日志配置
+        logging['svlogd_size'] = 100 * 1024 * 1024  # 100MB
+        logging['svlogd_num'] = 10
+        
+        # Gitaly配置
+        gitaly['configuration'] = {
+          concurrency: [
+            {
+              rpc: "/gitaly.SmartHTTPService/PostReceivePack",
+              max_per_repo: 3,
+            },
+            {
+              rpc: "/gitaly.SmartHTTPService/PostUploadPack", 
+              max_per_repo: 5,
+            }
+          ]
+        }
+    
+    volumes:
+      # 配置文件目录 - 包含gitlab.rb等配置
+      - /opt/gitlab/v5/config:/etc/gitlab:Z
+      # 日志目录 - 所有服务的日志文件
+      - /opt/gitlab/v5/logs:/var/log/gitlab:Z
+      # 数据目录 - Git仓库、数据库、上传文件等
+      - /opt/gitlab/v5/data:/var/opt/gitlab:Z
+      # 时间同步 - 与宿主机时间保持一致
+      - /etc/localtime:/etc/localtime:ro
+    
+    # 健康检查配置
+    healthcheck:
+      test: ["CMD", "/opt/gitlab/bin/gitlab-healthcheck", "--fail", "--max-time", "10"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 600s  # GitLab启动需要时间，给予10分钟启动时间
+    
+    # 资源限制 - 根据服务器配置调整
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+# 网络配置
+networks:
+  default:
+    driver: bridge

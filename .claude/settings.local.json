@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(scp:*)",
+      "Bash(docker:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

@@ -1,0 +1,147 @@
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab-v3
+    restart: unless-stopped
+    hostname: localhost
+    
+    ports:
+      # HTTP访问端口 (v3使用8080)
+      - "8080:80"
+      # SSH访问端口 (v3使用3333)
+      - "3333:22"
+      # Container Registry端口
+      - "5050:5050"
+      # GitLab Pages端口 (使用8092端口)
+      - "8092:8092"
+      
+    environment:
+      # GitLab v3配置 - 基于v2但启用Registry
+      GITLAB_OMNIBUS_CONFIG: |
+        # 外部访问URL
+        external_url 'http://192.168.0.127:8080'
+        
+        # SSH配置
+        gitlab_rails['gitlab_shell_ssh_port'] = 3333
+        
+        # 初始root密码
+        gitlab_rails['initial_root_password'] = 'GitLabFull2024!'
+        
+        # 时区设置
+        gitlab_rails['time_zone'] = 'Asia/Shanghai'
+        
+        # 启用用户注册
+        gitlab_rails['gitlab_signup_enabled'] = true
+        
+        # 邮件设置（启用）
+        gitlab_rails['gitlab_email_enabled'] = true
+        gitlab_rails['gitlab_email_from'] = 'gitlab@192.168.0.127'
+        gitlab_rails['gitlab_email_display_name'] = 'GitLab'
+        gitlab_rails['gitlab_email_reply_to'] = 'noreply@192.168.0.127'
+        
+        # 性能优化 - 中等内存配置
+        # PostgreSQL优化 (6GB内存配置)
+        postgresql['shared_preload_libraries'] = 'pg_stat_statements'
+        postgresql['max_connections'] = 300
+        postgresql['shared_buffers'] = '512MB'
+        postgresql['work_mem'] = '32MB'
+        postgresql['effective_cache_size'] = '2GB'
+        postgresql['maintenance_work_mem'] = '128MB'
+        postgresql['checkpoint_segments'] = 16
+        postgresql['checkpoint_completion_target'] = 0.9
+        
+        # Puma配置（应用服务器 - 6GB内存优化）
+        puma['worker_processes'] = 4
+        puma['min_threads'] = 4
+        puma['max_threads'] = 8
+        puma['worker_timeout'] = 300
+        puma['worker_killer_max_memory_mb'] = 1024
+        puma['port'] = nil
+        puma['bind'] = 'unix:///var/opt/gitlab/gitlab-rails/sockets/gitlab.socket'
+        
+        # Sidekiq配置（后台任务 - 增强）
+        sidekiq['max_concurrency'] = 20
+        sidekiq['metrics_enabled'] = true
+        sidekiq['log_format'] = 'json'
+        
+        # Nginx配置（增强性能）
+        nginx['worker_processes'] = 4
+        nginx['worker_connections'] = 2048
+        nginx['client_max_body_size'] = '500m'
+        nginx['gzip'] = 'on'
+        nginx['gzip_vary'] = 'on'
+        nginx['gzip_comp_level'] = 6
+        
+        # 监控服务配置（轻量级启用）
+        prometheus_monitoring['enable'] = true
+        prometheus['enable'] = true
+        prometheus['storage_retention'] = '15d'
+        prometheus['scrape_interval'] = 15
+        
+        # 导出器配置
+        node_exporter['enable'] = true
+        postgres_exporter['enable'] = true
+        redis_exporter['enable'] = true
+        gitlab_exporter['enable'] = true
+        
+        # 禁用重量级组件
+        alertmanager['enable'] = false
+        
+        # GitLab Pages（启用，使用8092端口）
+        pages_external_url 'http://192.168.0.127:8092'
+        gitlab_pages['enable'] = true
+        gitlab_pages['inplace_chroot'] = true
+        gitlab_pages['listen_http'] = ['0.0.0.0:8092']
+        
+        # Container Registry（启用）
+        registry_external_url 'http://192.168.0.127:5050'
+        gitlab_rails['registry_enabled'] = true
+        registry['enable'] = true
+        registry['storage_delete_enabled'] = true
+        
+        # Git LFS支持
+        gitlab_rails['lfs_enabled'] = true
+        gitlab_rails['lfs_storage_path'] = "/var/opt/gitlab/gitlab-rails/shared/lfs-objects"
+        
+        # 备份配置
+        gitlab_rails['backup_keep_time'] = 604800
+        gitlab_rails['backup_path'] = '/var/opt/gitlab/backups'
+        
+        # 日志级别
+        logging['svlogd_size'] = 50 * 1024 * 1024
+        logging['svlogd_num'] = 3
+
+    volumes:
+      # 配置文件目录
+      - ./gitlab-config:/etc/gitlab:Z
+      # 日志目录
+      - ./gitlab-logs:/var/log/gitlab:Z
+      # 数据目录（包含Git仓库）
+      - ./gitlab-data:/var/opt/gitlab:Z
+      
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "/opt/gitlab/bin/gitlab-healthcheck", "--fail", "--max-time", "10"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 600s
+      
+    # 资源限制 - 6GB内存配置
+    deploy:
+      resources:
+        limits:
+          memory: 6G
+          cpus: '4.0'
+        reservations:
+          memory: 4G
+          cpus: '3.0'
+    
+    # 共享内存设置
+    shm_size: 1g
+    
+networks:
+  default:
+    driver: bridge

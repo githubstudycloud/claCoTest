@@ -1,0 +1,113 @@
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab-ce
+    restart: unless-stopped
+    hostname: gitlab.local
+    
+    environment:
+      # GitLab配置
+      GITLAB_OMNIBUS_CONFIG: |
+        # 外部URL配置
+        external_url 'http://localhost:8080'
+        
+        # GitLab Rails配置
+        gitlab_rails['gitlab_shell_ssh_port'] = 2222
+        
+        # 初始root密码设置
+        gitlab_rails['initial_root_password'] = 'ChangeMePlease123!'
+        
+        # 时区设置
+        gitlab_rails['time_zone'] = 'Asia/Shanghai'
+        
+        # 邮件配置（可选，暂时关闭）
+        gitlab_rails['gitlab_email_enabled'] = false
+        
+        # 备份设置
+        gitlab_rails['backup_keep_time'] = 604800
+        
+        # 性能优化设置
+        # 适合小型部署的资源限制
+        postgresql['shared_preload_libraries'] = 'pg_stat_statements'
+        postgresql['max_connections'] = 50
+        postgresql['work_mem'] = '16MB'
+        
+        # Nginx配置
+        nginx['worker_processes'] = 2
+        nginx['worker_connections'] = 1024
+        
+        # Puma配置（GitLab应用服务器）
+        puma['worker_processes'] = 2
+        puma['min_threads'] = 4
+        puma['max_threads'] = 4
+        
+        # Sidekiq配置（后台任务处理）
+        sidekiq['max_concurrency'] = 10
+        
+        # 禁用一些不必要的服务以节省资源
+        # prometheus_monitoring['enable'] = false
+        # alertmanager['enable'] = false
+        # node_exporter['enable'] = false
+        # redis_exporter['enable'] = false
+        # postgres_exporter['enable'] = false
+        # gitlab_exporter['enable'] = false
+        # grafana['enable'] = false
+        
+        # 注册功能配置
+        gitlab_rails['gitlab_signup_enabled'] = false
+        
+    ports:
+      # HTTP访问端口
+      - "8080:80"
+      # HTTPS访问端口（可选）
+      # - "8443:443" 
+      # SSH访问端口
+      - "2222:22"
+      
+    volumes:
+      # GitLab配置文件
+      - ./config:/etc/gitlab:Z
+      # GitLab日志文件
+      - ./logs:/var/log/gitlab:Z
+      # GitLab数据文件（重要！包含仓库数据）
+      - ./data:/var/opt/gitlab:Z
+      
+    networks:
+      - gitlab-network
+      
+    # 健康检查配置
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/-/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+      
+    # 资源限制（可根据服务器配置调整）
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+        reservations:
+          memory: 2G
+
+networks:
+  gitlab-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# 可选：添加Redis缓存服务（提高性能）
+# 如果服务器资源充足可以启用
+# services:
+#   redis:
+#     image: redis:7-alpine
+#     container_name: gitlab-redis
+#     restart: unless-stopped
+#     volumes:
+#       - ./redis-data:/data
+#     networks:
+#       - gitlab-network

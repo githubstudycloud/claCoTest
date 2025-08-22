@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:17.5.1-ce.0
+    container_name: gitlab-v5
+    restart: unless-stopped
+    hostname: 'gitlab.example.com'
+    privileged: true  # 解决权限问题
+    shm_size: '512m'  # 避免内存不足导致502错误
+    
+    ports:
+      # HTTP访问端口 (使用8929替代常见的8080)
+      - "8929:80"
+      # HTTPS访问端口 (使用8943替代常见的8443)
+      - "8943:443"
+      # SSH访问端口 (使用2289替代常见的2222)
+      - "2289:22"
+      # Container Registry端口 (使用5089替代常见的5050)
+      - "5089:5050"
+    
+    environment:
+      TZ: Asia/Shanghai  # 时区设置
+      GITLAB_OMNIBUS_CONFIG: |
+        # 基础URL配置
+        external_url 'http://192.168.0.127:8929'
+        
+        # SSH端口配置
+        gitlab_rails['gitlab_shell_ssh_port'] = 2289
+        
+        # 时区设置
+        gitlab_rails['time_zone'] = 'Asia/Shanghai'
+        
+        # 初始root密码
+        gitlab_rails['initial_root_password'] = 'GitLab@V5#2024!'
+        
+        # 用户注册设置
+        gitlab_rails['gitlab_signup_enabled'] = false
+        gitlab_rails['gitlab_email_enabled'] = false
+        
+        # Container Registry配置
+        registry_external_url 'http://192.168.0.127:5089'
+        gitlab_rails['registry_enabled'] = true
+        registry['enable'] = true
+        
+        # Git LFS支持
+        gitlab_rails['lfs_enabled'] = true
+        
+        # 备份设置
+        gitlab_rails['backup_keep_time'] = 604800  # 保留7天
+        gitlab_rails['backup_path'] = "/var/opt/gitlab/backups"
+        
+        # 性能优化 - 适中内存配置
+        postgresql['shared_buffers'] = '256MB'
+        postgresql['max_connections'] = 200
+        postgresql['work_mem'] = '8MB'
+        
+        puma['worker_processes'] = 2
+        puma['min_threads'] = 2
+        puma['max_threads'] = 4
+        
+        sidekiq['max_concurrency'] = 10
+        
+        nginx['worker_processes'] = 2
+        nginx['worker_connections'] = 1024
+        nginx['client_max_body_size'] = '500m'
+        
+        # 禁用监控服务节省资源
+        prometheus_monitoring['enable'] = false
+        
+        # 禁用不需要的服务
+        gitlab_pages['enable'] = false
+        gitlab_rails['mattermost_enabled'] = false
+        
+        # 日志配置
+        logging['svlogd_size'] = 100 * 1024 * 1024  # 100MB
+        logging['svlogd_num'] = 10
+    
+    volumes:
+      # 配置文件目录
+      - /opt/gitlab/v5/config:/etc/gitlab:Z
+      # 日志目录
+      - /opt/gitlab/v5/logs:/var/log/gitlab:Z
+      # 数据目录（包含Git仓库、上传文件等）
+      - /opt/gitlab/v5/data:/var/opt/gitlab:Z
+      # 时间同步
+      - /etc/localtime:/etc/localtime:ro
+    
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "/opt/gitlab/bin/gitlab-healthcheck", "--fail", "--max-time", "10"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 600s
+    
+    # 资源限制
+    deploy:
+      resources:
+        limits:
+          memory: 4G
+          cpus: '2.0'
+        reservations:
+          memory: 2G
+          cpus: '1.0'
+
+networks:
+  default:
+    driver: bridge

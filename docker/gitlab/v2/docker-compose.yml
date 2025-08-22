@@ -1,0 +1,121 @@
+version: '3.8'
+
+services:
+  gitlab:
+    image: gitlab/gitlab-ce:latest
+    container_name: gitlab-v2
+    restart: unless-stopped
+    hostname: gitlab-server
+    
+    ports:
+      # HTTP访问端口
+      - "80:80"
+      # SSH访问端口  
+      - "22:22"
+      
+    environment:
+      # GitLab核心配置
+      GITLAB_OMNIBUS_CONFIG: |
+        # 外部访问URL
+        external_url 'http://[server-ip]'
+        
+        # SSH配置
+        gitlab_rails['gitlab_shell_ssh_port'] = 22
+        
+        # 初始root密码
+        gitlab_rails['initial_root_password'] = 'GitLabAdmin2024!'
+        
+        # 时区设置
+        gitlab_rails['time_zone'] = 'Asia/Shanghai'
+        
+        # 禁用用户注册
+        gitlab_rails['gitlab_signup_enabled'] = false
+        
+        # 邮件设置（暂时禁用）
+        gitlab_rails['gitlab_email_enabled'] = false
+        
+        # 性能优化 - 小内存配置
+        # PostgreSQL优化
+        postgresql['shared_preload_libraries'] = 'pg_stat_statements'
+        postgresql['max_connections'] = 100
+        postgresql['shared_buffers'] = '128MB'
+        postgresql['work_mem'] = '8MB'
+        postgresql['effective_cache_size'] = '512MB'
+        
+        # Puma配置（应用服务器）
+        puma['worker_processes'] = 2
+        puma['min_threads'] = 1
+        puma['max_threads'] = 2
+        puma['worker_timeout'] = 60
+        
+        # Sidekiq配置（后台任务）
+        sidekiq['max_concurrency'] = 5
+        
+        # Nginx配置
+        nginx['worker_processes'] = 1
+        nginx['worker_connections'] = 512
+        
+        # 禁用一些服务以节省内存
+        prometheus_monitoring['enable'] = false
+        alertmanager['enable'] = false
+        node_exporter['enable'] = false
+        redis_exporter['enable'] = false
+        postgres_exporter['enable'] = false
+        gitlab_exporter['enable'] = false
+        grafana['enable'] = false
+        
+        # GitLab Pages（如不需要可禁用）
+        pages_external_url 'http://[server-ip]'
+        gitlab_pages['enable'] = false
+        
+        # Container Registry（如不需要可禁用）
+        registry_external_url 'http://[server-ip]:5050'
+        gitlab_rails['registry_enabled'] = false
+        
+        # 备份配置
+        gitlab_rails['backup_keep_time'] = 604800
+        gitlab_rails['backup_path'] = '/var/opt/gitlab/backups'
+        
+        # 日志级别
+        logging['svlogd_size'] = 50 * 1024 * 1024
+        logging['svlogd_num'] = 3
+        
+        # Git配置
+        git_data_dirs({
+          "default" => {
+            "path" => "/var/opt/gitlab/git-data"
+          }
+        })
+
+    volumes:
+      # 配置文件目录
+      - ./gitlab-config:/etc/gitlab:Z
+      # 日志目录
+      - ./gitlab-logs:/var/log/gitlab:Z
+      # 数据目录（包含Git仓库）
+      - ./gitlab-data:/var/opt/gitlab:Z
+      
+    # 健康检查
+    healthcheck:
+      test: ["CMD", "/opt/gitlab/bin/gitlab-healthcheck", "--fail", "--max-time", "10"]
+      interval: 60s
+      timeout: 30s
+      retries: 5
+      start_period: 600s
+      
+    # 资源限制 - 适合小内存服务器
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: '2.0'
+        reservations:
+          memory: 1G
+          cpus: '1.0'
+    
+    # 共享内存设置
+    shm_size: 256mb
+    
+networks:
+  default:
+    driver: bridge
